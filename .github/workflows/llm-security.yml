@@ -21,6 +21,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Create evidence directory
+        run: mkdir -p artifacts
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -34,7 +37,7 @@ jobs:
         run: ruff check .
 
       - name: Unit and adversarial regression tests
-        run: pytest
+        run: python -m pytest
 
       - name: Semgrep OWASP and AI security scan
         run: |
@@ -49,7 +52,7 @@ jobs:
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('artifacts/semgrep.sarif') != ''
         with:
           sarif_file: artifacts/semgrep.sarif
 
@@ -126,20 +129,23 @@ jobs:
           exit 1
 
       - name: Run Garak prompt-injection and jailbreak probes
-        run: >-
-          garak
-          --config garak/config.yaml
-          --target_type rest
-          --generator_option_file garak/rest_config.json
-          --probes promptinject,dan,encoding
-          --skip_unknown
-          --narrow_output
+        run: |
+          garak \
+            --config garak/config.yaml \
+            --target_type rest \
+            --generator_option_file garak/rest_config.json \
+            --probes promptinject,dan,encoding \
+            --skip_unknown \
+            --narrow_output
+          report=$(find "$HOME/.local/share/garak" artifacts/garak -name "*.report.jsonl" -print -quit)
+          test -n "$report"
+          cp "$report" artifacts/garak/garak.report.jsonl
 
       - name: Enforce Garak minimum pass rate
-        run: |
-          report=$(find artifacts/garak -name "*.report.jsonl" -print -quit)
-          test -n "$report"
-          python scripts/garak_gate.py "$report" --minimum-pass-rate 0.95
+        run: >-
+          python scripts/garak_gate.py
+          artifacts/garak/garak.report.jsonl
+          --minimum-pass-rate 0.95
 
       - name: Upload Garak reports
         uses: actions/upload-artifact@v4
