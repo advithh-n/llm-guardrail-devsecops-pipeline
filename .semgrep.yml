@@ -1,0 +1,28 @@
+rules:
+  - id: python-dangerous-eval
+    message: Dynamic code execution is forbidden in the AI gateway.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: subprocess-shell-true
+    message: Shell command execution with shell=True is forbidden.
+    severity: ERROR
+    languages: [python]
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: raw-prompt-logging
+    message: Do not place raw prompts in application logs; log a fingerprint instead.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: logger.info(..., $PROMPT, ...)
+          - pattern: logger.warning(..., $PROMPT, ...)
+          - pattern: logger.error(..., $PROMPT, ...)
+      - metavariable-regex:
+          metavariable: $PROMPT
+          regex: (?i).*(prompt|message|content).*
+

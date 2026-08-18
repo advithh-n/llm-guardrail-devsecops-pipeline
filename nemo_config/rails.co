@@ -1,0 +1,20 @@
+define bot refuse unsafe request
+  "I cannot comply with that request because it conflicts with the security policy."
+
+define flow detect prompt injection
+  $allowed = execute detect_prompt_injection
+  if not $allowed
+    bot refuse unsafe request
+    stop
+
+define flow mask sensitive data
+  $sanitized = execute sanitize_sensitive_data
+  if $sanitized
+    $user_message = $sanitized
+
+define flow prevent sensitive data leakage
+  $safe = execute validate_model_output
+  if not $safe
+    bot refuse unsafe request
+    stop
+

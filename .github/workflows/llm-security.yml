@@ -1,0 +1,150 @@
+name: LLM application security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  security-gates:
+    name: SAST, adversarial tests and container scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit and adversarial regression tests
+        run: pytest
+
+      - name: Semgrep OWASP and AI security scan
+        run: |
+          mkdir -p artifacts
+          semgrep scan \
+            --config .semgrep.yml \
+            --config p/ai-best-practices \
+            --config p/owasp-top-ten \
+            --error \
+            --sarif-output artifacts/semgrep.sarif \
+            app scripts tests
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: artifacts/semgrep.sarif
+
+      - name: Start local guarded model endpoint
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 > artifacts/gateway.log 2>&1 &
+          for _ in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8000/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Enforce adversarial prompt regression gate
+        run: >-
+          python scripts/red_team_gate.py
+          --base-url http://127.0.0.1:8000
+          --cases red_team/cases.json
+          --output artifacts/red-team-report.json
+
+      - name: Build hardened gateway container
+        run: docker build --pull --tag llm-guardrail-gateway:${{ github.sha }} .
+
+      - name: Scan container and block critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: llm-guardrail-gateway:${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload security evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm-security-evidence
+          path: artifacts/
+          retention-days: 30
+
+  garak-red-team:
+    name: Garak automated model red team
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install gateway and Garak
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-garak.txt
+
+      - name: Start local guarded model endpoint
+        run: |
+          mkdir -p artifacts/garak
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 > artifacts/garak/gateway.log 2>&1 &
+          for _ in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8000/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Run Garak prompt-injection and jailbreak probes
+        run: >-
+          garak
+          --config garak/config.yaml
+          --target_type rest
+          --generator_option_file garak/rest_config.json
+          --probes promptinject,dan,encoding
+          --skip_unknown
+          --narrow_output
+
+      - name: Enforce Garak minimum pass rate
+        run: |
+          report=$(find artifacts/garak -name "*.report.jsonl" -print -quit)
+          test -n "$report"
+          python scripts/garak_gate.py "$report" --minimum-pass-rate 0.95
+
+      - name: Upload Garak reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: garak-red-team-report
+          path: artifacts/garak/
+          retention-days: 30
