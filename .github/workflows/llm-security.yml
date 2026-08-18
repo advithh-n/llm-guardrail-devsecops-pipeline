@@ -75,7 +75,7 @@ jobs:
         run: docker build --pull --tag llm-guardrail-gateway:${{ github.sha }} .
 
       - name: Scan container and block critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: llm-guardrail-gateway:${{ github.sha }}
           format: table
