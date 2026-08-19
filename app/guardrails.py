@@ -14,13 +14,35 @@ class GuardrailDecision:
 INJECTION_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
-        r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
+        r"(ignore|disregard|forget)\s+(all\s+)?(previous|prior|above)?\s*(instructions|prompts|rules)",
         r"(reveal|print|show|repeat).{0,40}(system|developer)\s+prompt",
         r"(jailbreak|do\s+anything\s+now|\bdan\b|developer\s+mode)",
         r"(override|bypass|disable).{0,30}(guardrail|safety|policy|filter)",
         r"(exfiltrate|steal|dump).{0,30}(secret|credential|token|key|environment)",
         r"(read|show|return).{0,30}(/etc/passwd|\.env|environment\s+variable)",
+        r"\b(ai|language model)\b.{0,100}\b(biased|bias|political ideology|agenda)\b",
+        (
+            r"\b(how (do|can|to) i|write|create|make|instructions? for)\b"
+            r".{0,50}\b(hack|malware|meth|rob)\b"
+        ),
         r"<\s*(system|assistant|developer)\s*>",
+    )
+)
+
+JAILBREAK_INDICATORS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\b(act|respond|simulate|roleplay|become|continue)\b.{0,60}\b(as|like|mode|persona|character)\b",
+        r"\b(unfiltered|uncensored|unrestricted|amoral|no[ -]?limits|break free)\b",
+        r"\b(never|must not|do not|don't|cannot)\b.{0,40}\b(refuse|decline|warn|censor|filter)\b",
+        r"\b(ignore|disregard|forget|override)\b.{0,40}\b(rule|instruction|policy|guideline|restriction|filter|tos)\b",
+        r"\b(no|without|disabled)\b.{0,30}\b(ethics|morals|laws|safety|censorship|filters|restrictions)\b",
+        r"\b(make|fabricate)\b.{0,20}\b(up|answer|information)\b",
+        r"\b(always|must)\b.{0,35}\b(answer|respond|comply|fulfill|satisfy|follow)\b",
+        r"\b(stay|remain)\b.{0,20}\bin character\b",
+        r"\b(violate|bypass|ignore)\b.{0,30}\b(ethical|safety|content|policy|standards)\b",
+        r"(system announcement|insert prompt here|say anything now|do anything now)",
+        r"\b(ai|language model)\b.{0,50}\b(biased|bias|political ideology|agenda)\b",
     )
 )
 
@@ -70,6 +92,11 @@ def inspect_input(prompt: str, *, maximum_length: int = 4000) -> GuardrailDecisi
     if any(pattern.search(normalized) for pattern in UNSAFE_OPERATION_PATTERNS):
         return GuardrailDecision(False, "", "unsafe_operational_request")
     if any(pattern.search(normalized) for pattern in INJECTION_PATTERNS):
+        return GuardrailDecision(False, "", "prompt_injection")
+    jailbreak_signals = sum(
+        bool(pattern.search(normalized)) for pattern in JAILBREAK_INDICATORS
+    )
+    if jailbreak_signals >= 2:
         return GuardrailDecision(False, "", "prompt_injection")
 
     redacted, changed = redact_sensitive_data(normalized)
