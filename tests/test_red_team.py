@@ -31,6 +31,7 @@ def test_adversarial_prompts_are_blocked(prompt: str, expected_reason: str) -> N
     assert response.status_code == 200
     assert body["blocked"] is True
     assert body["reason"] == expected_reason
+    assert body["response"].startswith(("I cannot assist", "I cannot provide"))
     assert prompt not in body["response"]
 
 
@@ -51,4 +52,3 @@ def test_sensitive_model_output_is_withheld(monkeypatch: pytest.MonkeyPatch) -> 
     assert body["blocked"] is True
     assert body["reason"] == "sensitive_output_detected"
     assert "sk_example" not in body["response"]
-

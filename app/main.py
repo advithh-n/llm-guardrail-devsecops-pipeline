@@ -61,7 +61,7 @@ def refusal(reason: str) -> str:
             "I cannot provide instructions that bypass operational safeguards. "
             "Use an authorised engineering change-control process."
         )
-    return "I cannot comply with that request because it conflicts with the security policy."
+    return "I cannot assist with that request because it conflicts with the security policy."
 
 
 def process_prompt(prompt: str) -> ChatResponse:
@@ -110,4 +110,3 @@ def chat(request: ChatRequest) -> ChatResponse:
 def garak_endpoint(request: ChatRequest) -> dict[str, str]:
     result = process_prompt(request.prompt)
     return {"response": result.response}
-
